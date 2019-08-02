@@ -1,0 +1,14 @@
+#!/bin/bash
+
+USER_ID=$1
+
+A2_DOMAIN="xsoftware.eu"
+
+a2_config="/etc/apache2/sites-available/${USER_ID}.conf"
+
+rm $a2_config
+
+a2dissite ${USER_ID}
+systemctl restart apache2
+
+certbot certbot delete --cert-name ${USER_ID}.${A2_DOMAIN}

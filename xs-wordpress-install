@@ -1,0 +1,95 @@
+#!/bin/bash
+
+USER_ID=$1
+USER_MAIL=$2
+
+A2_USER="www-data"
+A2_GROUP="www-data"
+A2_DOMAIN="xsoftware.eu"
+A2_MAIL="info@xsoftware.it"
+
+DB_NAME="wordpress"
+DB_USER="wordpress"
+DB_HOST="localhost"
+
+WP_ROOT="/srv/wordpress"
+WP_EXEC="/opt/wp"
+
+# *** DEFINE FUNCTION *** #
+
+function xs_wordpress {
+        args=${1}
+        sudo -u ${A2_USER} ${WP_EXEC} --path="${WP_ROOT}" ${args}
+}
+
+function xs_genpasswd {
+        LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32 ; echo
+}
+
+function xs_gennumber {
+        echo $(shuf -i 1-1048576 -n 1)
+}
+
+# *** END DEFINE FUNCTION *** #
+# *** DATABASE CONFIG *** #
+
+mysql -e "CREATE DATABASE ${DB_NAME};"
+
+db_pass=$( xs_genpasswd )
+
+mysql -e "GRANT ALL PRIVILEGES ON ${DB_USER}.* TO '${DB_USER}'@'${DB_HOST}' IDENTIFIED BY '${db_pass}';"
+
+mysql -e "FLUSH PRIVILEGES;"
+
+# *** END DATABASE CONFIG *** #
+# *** APACHE2 CONFIG *** #
+
+a2_config="/etc/apache2/sites-available/${USER_ID}.conf"
+
+echo "<VirtualHost *:80>" > $a2_config
+echo "DocumentRoot ${WP_ROOT}" >> $a2_config
+echo "ServerName ${USER_ID}.${A2_DOMAIN}" >> $a2_config
+echo "ServerAdmin ${A2_MAIL}" >> $a2_config
+echo "ErrorLog \${APACHE_LOG_DIR}/${USER_ID}.error.log" >> $a2_config
+echo "CustomLog \${APACHE_LOG_DIR}/${USER_ID}.access.log combined" >> $a2_config
+echo "</VirtualHost>" >> $a2_config
+
+a2ensite ${USER_ID}
+systemctl restart apache2
+
+# *** END APACHE2 CONFIG *** #
+# *** WORDPRESS CONFIG *** #
+
+mkdir ${WP_ROOT}
+
+chown -R ${A2_USER}:${A2_GROUP} ${WP_ROOT}
+
+xs_wordpress "core download"
+
+xs_wordpress "core config --dbname=${DB_NAME} --dbuser=${DB_USER} --dbpass=${db_pass}"
+
+wp_user=$(xs_gennumber)
+wp_pass=$(xs_genpasswd)
+
+xs_wordpress "core install --url=https://${USER_ID}.${A2_DOMAIN} --title=${USER_ID} --admin_user=${wp_user}
+--admin_password=${wp_pass}
+--admin_email=${USER_MAIL}"
+
+xs_wordpress "theme activate twentyseventeen"
+
+wp_config="${WP_ROOT}/wp-config.php"
+
+echo "/** Fixed Apache SSL Proxy **/" >> $wp_config
+echo "\$_SERVER['HTTPS'] = 'on';" >> $wp_config
+echo "\$_SERVER['SERVER_PORT'] = 443;" >> $wp_config
+
+# *** END WORDPRESS CONFIG *** #
+# *** PRINT RESULT *** #
+echo "Installed WordPress at URL: https://${USER_ID}.${A2_DOMAIN}"
+echo "Installed WordPress at DIR: ${WP_ROOT}"
+echo "WordPress Admin Password: ${wp_pass}"
+echo "WordPress Admin User: ${wp_user}"
+echo "WordPress Admin E-Mail: ${USER_MAIL}"
+echo "WordPress DB Password: ${db_pass}"
+echo "WordPress DB User: ${DB_USER}"
+echo "WordPress DB Name: ${DB_NAME}"

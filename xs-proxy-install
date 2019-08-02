@@ -1,0 +1,36 @@
+#!/bin/bash
+
+USER_ID=$1
+USER_IP=$2
+
+A2_USER="www-data"
+A2_GROUP="www-data"
+A2_DOMAIN="xsoftware.eu"
+A2_MAIL="info@xsoftware.it"
+
+SSL_MAIL="server@xsoftware.it"
+
+a2_config="/etc/apache2/sites-available/${USER_ID}.conf"
+
+echo "<VirtualHost *:80>" > $a2_config
+echo "ServerName ${USER_ID}.${A2_DOMAIN}" >> $a2_config
+echo "RequestHeader set ${USER_ID}.${A2_DOMAIN} Accept-Encoding" >> $a2_config
+echo "ProxyPreserveHost On" >> $a2_config
+echo "ProxyPass / http://${USER_IP}/" >> $a2_config
+echo "ProxyPassReverse / http://${USER_IP}/" >> $a2_config
+echo "<Proxy *>" >> $a2_config
+echo "Order deny,allow" >> $a2_config
+echo "Allow from all" >> $a2_config
+echo "</Proxy>" >> $a2_config
+echo "ServerAdmin ${A2_MAIL}" >> $a2_config
+echo "ErrorLog \${APACHE_LOG_DIR}/${USER_ID}.error.log" >> $a2_config
+echo "CustomLog \${APACHE_LOG_DIR}/${USER_ID}.access.log combined" >> $a2_config
+echo "RewriteEngine on" >> $a2_config
+echo "RewriteCond %{SERVER_NAME} =${USER_ID}.${A2_DOMAIN}" >> $a2_config
+echo "RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [END,NE,R=permanent]" >> $a2_config
+echo "</VirtualHost>" >> $a2_config
+
+a2ensite ${USER_ID}
+systemctl restart apache2
+
+certbot -n --apache -d ${USER_ID}.${A2_DOMAIN} -m ${SSL_MAIL} --agree-tos

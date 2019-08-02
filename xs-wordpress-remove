@@ -1,0 +1,28 @@
+#!/bin/bash
+
+USER_ID=$1
+
+WP_ROOT="/srv/wordpress/"
+
+DB_NAME="wordpress"
+DB_USER="wordpress"
+DB_HOST="localhost"
+
+mysql -e "DROP DATABASE ${DB_NAME}"
+mysql -e "DROP USER '${DB_USER}'@'${DB_HOST}'"
+
+mysql -e "FLUSH PRIVILEGES;"
+
+a2dissite ${USER_ID}
+
+a2_config="/etc/apache2/sites-available/${USER_ID}.conf"
+
+rm ${a2_config}
+
+systemctl restart apache2
+
+rm -r ${WP_ROOT}
+
+echo "Removed WordPress at DIR: ${WP_ROOT}"
+echo "Removed WordPress DB User: ${DB_USER}"
+echo "Removed WordPress DB Name: ${DB_NAME}"
