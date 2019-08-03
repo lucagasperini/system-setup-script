@@ -13,7 +13,7 @@ DB_USER="wordpress"
 DB_HOST="localhost"
 
 WP_ROOT="/srv/wordpress"
-WP_EXEC="/opt/wp"
+WP_EXEC="/usr/bin/wp-cli"
 
 # *** DEFINE FUNCTION *** #
 
@@ -75,13 +75,11 @@ xs_wordpress "core install --url=https://${USER_ID}.${A2_DOMAIN} --title=${USER_
 --admin_password=${wp_pass}
 --admin_email=${USER_MAIL}"
 
+xs_wordpress "config set --type=variable _SERVER['HTTPS'] on"
+
 xs_wordpress "theme activate twentyseventeen"
 
 wp_config="${WP_ROOT}/wp-config.php"
-
-echo "/** Fixed Apache SSL Proxy **/" >> $wp_config
-echo "\$_SERVER['HTTPS'] = 'on';" >> $wp_config
-echo "\$_SERVER['SERVER_PORT'] = 443;" >> $wp_config
 
 # *** END WORDPRESS CONFIG *** #
 # *** PRINT RESULT *** #
