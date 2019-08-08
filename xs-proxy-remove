@@ -10,5 +10,3 @@ rm $a2_config
 
 a2dissite ${USER_ID}
 systemctl restart apache2
-
-certbot certbot delete --cert-name ${USER_ID}.${A2_DOMAIN}
