@@ -2,6 +2,28 @@
 
 USER_ID=$1
 USER_IP=$2
+USER_PORT="80"
+
+while getopts "rh:u:p:" opt; do
+        case $opt in
+        h)
+                USER_IP=$OPTARG
+                ;;
+        u)
+                USER_ID=$OPTARG
+                ;;
+        r)
+                USER_REPLACE="y"
+                ;;
+        p)
+                USER_PORT=$OPTARG
+                ;;
+        \?)
+                echo "Invalid option: -$OPTARG" >&2
+                exit 1
+                ;;
+        esac
+done
 
 A2_USER="www-data"
 A2_GROUP="www-data"
@@ -12,12 +34,16 @@ SSL_MAIL="server@xsoftware.it"
 
 a2_config="/etc/apache2/sites-available/${USER_ID}.conf"
 
-echo "<VirtualHost *:80>" > $a2_config
+if [ $USER_REPLACE ]; then
+        rm $a2_config
+fi
+
+echo "<VirtualHost *:${USER_PORT}>" >> $a2_config
 echo "ServerName ${USER_ID}.${A2_DOMAIN}" >> $a2_config
 echo "RequestHeader set ${USER_ID}.${A2_DOMAIN} Accept-Encoding" >> $a2_config
 echo "ProxyPreserveHost On" >> $a2_config
-echo "ProxyPass / http://${USER_IP}/" >> $a2_config
-echo "ProxyPassReverse / http://${USER_IP}/" >> $a2_config
+echo "ProxyPass / http://${USER_IP}:${USER_PORT}/" >> $a2_config
+echo "ProxyPassReverse / http://${USER_IP}:${USER_PORT}/" >> $a2_config
 echo "<Proxy *>" >> $a2_config
 echo "Order deny,allow" >> $a2_config
 echo "Allow from all" >> $a2_config
@@ -25,9 +51,15 @@ echo "</Proxy>" >> $a2_config
 echo "ServerAdmin ${A2_MAIL}" >> $a2_config
 echo "ErrorLog \${APACHE_LOG_DIR}/${USER_ID}.error.log" >> $a2_config
 echo "CustomLog \${APACHE_LOG_DIR}/${USER_ID}.access.log combined" >> $a2_config
-echo "RewriteEngine on" >> $a2_config
-echo "RewriteCond %{SERVER_NAME} =${USER_ID}.${A2_DOMAIN}" >> $a2_config
-echo "RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [END,NE,R=permanent]" >> $a2_config
+if [ $USER_REPLACE ]; then
+        echo "RewriteEngine on" >> $a2_config
+        echo "RewriteCond %{SERVER_NAME} =${USER_ID}.${A2_DOMAIN}" >> $a2_config
+        echo "RewriteRule ^ https://%{SERVER_NAME}%{REQUEST_URI} [END,NE,R=permanent]" >> $a2_config
+else
+        echo "Include /etc/letsencrypt/options-ssl-apache.conf" >> $a2_config
+        echo "SSLCertificateFile /etc/letsencrypt/live/${USER_ID}.${A2_DOMAIN}/fullchain.pem" >> $a2_config
+        echo "SSLCertificateKeyFile /etc/letsencrypt/live/${USER_ID}.${A2_DOMAIN}/privkey.pem" >> $a2_config
+if
 echo "</VirtualHost>" >> $a2_config
 
 a2ensite ${USER_ID}
