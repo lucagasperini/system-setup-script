@@ -64,8 +64,6 @@ mkdir ${WP_ROOT}
 
 chown -R ${A2_USER}:${A2_GROUP} ${WP_ROOT}
 
-xs_wordpress "core download"
-
 xs_wordpress "core config --dbname=${DB_NAME} --dbuser=${DB_USER} --dbpass=${db_pass}"
 
 wp_user=$(xs_gennumber)
