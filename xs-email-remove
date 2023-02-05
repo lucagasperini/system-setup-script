@@ -1,0 +1,37 @@
+#!/bin/bash
+
+ADM_EMAIL="101"
+ADM_PGSQL_USER="mail"
+ADM_PGSQL_DB="mail"
+
+while getopts "D:u:" opt; do
+        case $opt in
+	D)
+		USER_DOMAIN=$OPTARG
+		;;
+	u)
+		USER_NAME=$OPTARG
+		;;
+        \?)
+                echo "Invalid option: -$OPTARG" >&2
+                exit 1
+                ;;
+        esac
+done
+
+if [ -z "${USER_NAME}" ]; then
+	echo "Invalid parameters input: -u => Name; -e => EMail"
+	exit 1
+fi
+
+if [ -z "${USER_DOMAIN}" ]; then
+	USER_DOMAIN="mail.xsoftware.eu"
+fi
+
+domain_id=$(
+pct exec ${ADM_EMAIL} sh <<EOF
+psql -t -d ${ADM_PGSQL_DB} -U ${ADM_PGSQL_USER} -c "SELECT id FROM virtual_domains WHERE name='${USER_DOMAIN}';"
+EOF
+)
+
+pct exec ${ADM_EMAIL} -- psql -d ${ADM_PGSQL_DB} -U ${ADM_PGSQL_USER} -c "DELETE FROM virtual_users WHERE domain_id=${domain_id} AND name='${USER_NAME}';"

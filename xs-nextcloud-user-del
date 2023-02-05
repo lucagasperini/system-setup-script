@@ -1,0 +1,25 @@
+#!/bin/bash
+
+NC_OCC="/srv/nextcloud/occ"
+NC_INDEX="105"
+NC_GROUP="users"
+A2_USER="www-data"
+
+while getopts "u:" opt; do
+        case $opt in
+        u)
+                USER_NAME=$OPTARG
+                ;;
+        \?)
+                echo "Invalid option: -$OPTARG" >&2
+                exit 1
+                ;;
+        esac
+done
+
+if [ -z "${USER_NAME}" ]; then
+        echo "Invalid parameters input: -u => Name;"
+	exit 1
+fi
+
+pct exec ${NC_INDEX} -- sudo -u ${A2_USER} php ${NC_OCC} user:delete ${USER_NAME}

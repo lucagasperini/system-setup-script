@@ -1,0 +1,44 @@
+#!/bin/bash
+ADM_PGSQL="102"
+ADM_PGSQL_EXPIRED=2
+ADM_PGSQL_ACTIVE=1
+ADM_PGSQL_INACTIVE=0
+ADM_PGSQL_USER="sys"
+ADM_PGSQL_DB="sys"
+ADM_MAIL="scadenze@xsoftware.it"
+ADM_MAILBOT="106"
+ADM_MAILBOT_SUBJECT="Avviso di scadenza dei servizi XSoftware"
+ADM_MAILBOT_INFOMAIL="info@xsoftware.it"
+
+mail_list=$(
+pct exec ${ADM_PGSQL} sh <<EOF
+psql -t -d ${ADM_PGSQL_DB} -U ${ADM_PGSQL_USER} -c "SELECT mail FROM users WHERE status=${ADM_PGSQL_ACTIVE} AND expdate < current_date;"
+EOF
+)
+
+if [ -z "${mail_list}" ]; then
+        exit 0;
+fi
+
+mailbot_message="
+Gentile cliente,\n
+\n
+Ti ricordiamo che oggi è sono scaduti i servizi di XSoftware.\n
+I servizi sono stati disattivati e rimarranno in questo stato per almeno due settimane,\n
+dopo questo lasso di tempo senza una previsione di rinnovo i dati verranno cancellati.\n
+Questo è un messaggio automatico, per favore non rispondere a questa email,\n
+per qualsiasi informazione ci contatti al seguente indirizzo email:\n
+${ADM_MAILBOT_INFOMAIL}
+"
+
+for mail in ${mail_list}
+do
+pct exec ${ADM_MAILBOT} sh <<EOF
+xs-sendemail -t "${ADM_MAIL}" -s "${mail}:${ADM_MAILBOT_SUBJECT}" -m "${mailbot_message}"
+xs-sendemail -t "${mail}" -s "${ADM_MAILBOT_SUBJECT}" -m "${mailbot_message}"
+EOF
+done
+
+pct exec ${ADM_PGSQL} sh <<EOF
+psql -d ${ADM_PGSQL_DB} -U ${ADM_PGSQL_USER} -c "UPDATE users SET status=${ADM_PGSQL_EXPIRED} WHERE status=${ADM_PGSQL_ACTIVE} AND expdate < current_date;"
+EOF

@@ -1,0 +1,41 @@
+#!/bin/bash
+
+ADM_PROXY="100"
+ADM_PGSQL="103"
+ADM_PGSQL_EXPIRED=2
+ADM_PGSQL_INACTIVE=0
+ADM_PGSQL_USER="sys"
+ADM_PGSQL_DB="sys"
+
+while getopts "i:" opt; do
+        case $opt in
+        i)
+                USER_INDEX=$OPTARG
+                ;;
+        \?)
+                echo "Invalid option: -$OPTARG" >&2
+                exit 1
+                ;;
+        esac
+done
+
+if [ -z "${USER_INDEX}" ]; then
+	echo "Invalid parameters input: -i => Index;"
+	exit 1
+fi
+
+ssh-keygen -R 192.168.1.${USER_INDEX}
+
+pvesr delete ${USER_INDEX}-0 --force
+
+pct stop ${USER_INDEX}
+
+pct destroy ${USER_INDEX}
+
+pct exec ${ADM_PROXY} -- xs-proxy-remove -i ${USER_INDEX}
+
+pct exec ${ADM_PGSQL} sh <<EOF
+psql -d ${ADM_PGSQL_DB} -U ${ADM_PGSQL_USER} -c "UPDATE users SET status=${ADM_PGSQL_INACTIVE} WHERE index=${USER_INDEX} AND status=${ADM_PGSQL_EXPIRED}"
+EOF
+
+echo "XSOFTWARE -> Removed Container ${USER_INDEX}"

@@ -1,0 +1,57 @@
+#!/bin/bash
+
+NC_OCC="/srv/nextcloud/occ"
+NC_INDEX="105"
+NC_GROUP="users"
+A2_USER="www-data"
+ADM_MAILBOT_SUBJECT="Attivazione Cloud XSoftware"
+ADM_MAILBOT_INFOMAIL="info@xsoftware.it"
+ADM_EMAIL="101"
+
+while getopts "q:u:e:" opt; do
+        case $opt in
+	q)
+		USER_QUOTA=$OPTARG
+		;;
+        u)
+                USER_NAME=$OPTARG
+                ;;
+	e)
+		USER_EMAIL=$OPTARG
+		;;
+        \?)
+                echo "Invalid option: -$OPTARG" >&2
+                exit 1
+                ;;
+        esac
+done
+
+if [ -z "${USER_NAME}" ] || [ -z "${USER_EMAIL}" ] || [ -z "${USER_QUOTA}" ]; then
+        echo "Invalid parameters input: -u => Name; -e => Email; -q => Quota;"
+	exit 1
+fi
+
+function xs_genpasswd {
+        LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32 ; echo
+}
+
+pwd=$(xs_genpasswd)
+
+pct exec ${NC_INDEX} sh <<EOF
+OC_PASS="${pwd}" su -s /bin/sh ${A2_USER} -c 'php ${NC_OCC} user:add --password-from-env ${USER_NAME} --group=${NC_GROUP}'
+sudo -u ${A2_USER} php ${NC_OCC} user:setting ${USER_NAME} files quota "${USER_QUOTA} GB"
+EOF
+
+mailbot_message="
+Gentile cliente,\n
+\n
+Abbiamo attivato il suo spazio Cloud, di seguito troverà le istruzioni:\n
+Per accedere al Cloud segua il seguente link: https://cloud.xsoftware.it\n
+Il suo nome utente è il seguente: ${USER_NAME}\n
+La sua password è la seguente: ${pwd}\n
+Per qualsiasi informazione ci contatti al seguente indirizzo email:\n
+${ADM_MAILBOT_INFOMAIL}
+"
+pct exec ${ADM_EMAIL} sh <<EOF
+xs-sendemail -t "${USER_EMAIL}" -s "${ADM_MAILBOT_SUBJECT}" -m "${mailbot_message}"
+EOF

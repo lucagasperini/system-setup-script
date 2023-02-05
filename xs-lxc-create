@@ -1,0 +1,234 @@
+#!/bin/bash
+
+ADM_TMP="local:vztmpl/debian-10.0-standard_10.0-1_amd64.tar.gz"
+ADM_EMAIL="server@xsoftware.it"
+ADM_DOMAIN="xsoftware.it"
+ADM_PROXY="100"
+ADM_PGSQL="103"
+ADM_REPO="http://192.168.1.104"
+ADM_TIME="Europe/Rome"
+ADM_LOCALE="it_IT.UTF-8"
+ADM_PGSQL_ACTIVE=1
+ADM_PGSQL_GPG=1
+ADM_PGSQL_USER="sys"
+ADM_PGSQL_DB="sys"
+ADM_MAILBOT="101"
+ADM_MAILBOT_SUBJECT="Credenziali per accedere ai servizi XSoftware"
+ADM_MAILBOT_INFOMAIL="info@xsoftware.it"
+
+function xs_genpasswd {
+        LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32 ; echo
+}
+
+root_pwd=$(xs_genpasswd)
+
+while getopts "d:i:c:t:m:e:u:D:E" opt; do
+        case $opt in
+        d)
+                USER_DISK=$OPTARG
+                ;;
+        i)
+                USER_INDEX=$OPTARG
+                ;;
+        c)
+                USER_CORE=$OPTARG
+                ;;
+        t)
+                USER_TYPE=$OPTARG
+                ;;
+	m)
+		USER_MEMORY=$OPTARG
+		;;
+	e)
+		USER_EMAIL=$OPTARG
+		;;
+	u)
+		USER_NAME=$OPTARG
+		;;
+        D)
+                USER_DOMAIN=$OPTARG
+                ;;
+	E)
+		USER_MONTH=$OPTARG
+		;;
+        \?)
+                echo "Invalid option: -$OPTARG" >&2
+                exit 1
+                ;;
+        esac
+done
+
+if [ -z "${USER_DISK}" ] || [ -z "${USER_INDEX}" ] || [ -z "${USER_CORE}" ] || [ -z "${USER_MEMORY}" ]; then
+	echo "Invalid parameters input: -d => Disk; -i => Index; -c => Core; -t => Type; -m => Memory; -e => Email; -u => Name;"
+	exit 1
+fi
+
+ssh-keygen -t rsa -b 4096 -C $ADM_EMAIL -f /root/.ssh/${USER_INDEX} -N "${root_pwd}" -q
+
+echo "SSH KEY PASSWORD: ${root_pwd}"
+
+#FIXME: Add --description
+pct create $USER_INDEX $ADM_TMP \
+--net0 name=eth1,bridge=vmbr1,firewall=0,gw=192.168.1.1,ip=192.168.1.${USER_INDEX}/24 \
+--rootfs local-zfs:${USER_DISK} \
+--cores ${USER_CORE} \
+--memory ${USER_MEMORY} \
+--onboot 1 \
+--ostype debian \
+--start 1 \
+--unprivileged 1 \
+--features nesting=1 \
+--hostname user${USER_INDEX} \
+--ssh-public-keys /root/.ssh/${USER_INDEX}.pub \
+--password
+
+# Add SSH to the next configuration with
+#systemctl start sshd
+#systemctl enable sshd
+
+pct exec ${USER_INDEX} sh <<EOF
+rm /etc/locale.gen
+echo "${ADM_LOCALE} UTF-8" >> /etc/locale.gen
+echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
+timedatectl set-timezone $ADM_TIME
+echo "LANG=${ADM_LOCALE}" >> /etc/default/locale
+echo "LC_ALL=${ADM_LOCALE}" >> /etc/default/locale
+locale-gen
+apt update
+apt upgrade -y
+apt install -y gnupg
+echo "deb ${ADM_REPO}/ ./" >> /etc/apt/sources.list
+wget -q -O - "${ADM_REPO}/key.gpg" | apt-key add -
+
+apt update
+
+echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
+systemctl disable sshd
+systemctl stop sshd
+systemctl disable ssh
+systemctl stop ssh
+EOF
+
+if [ -z "${USER_TYPE}" ] || [ "${USER_TYPE}" == "none" ]; then
+	echo "XSOFTWARE -> Created empty container ${USER_INDEX}"
+	exit 0
+fi
+
+if [ "${USER_DOMAIN}" ]; then
+	d_domain="-D ${USER_DOMAIN}"
+	d_erp_domain="-D erp.${USER_DOMAIN}"
+	domain="${USER_DOMAIN}"
+	erp_domain="erp.${USER_DOMAIN}"
+else
+	domain="${USER_NAME}.${ADM_DOMAIN}"
+	erp_domain="erp-${USER_NAME}.${ADM_DOMAIN}"
+fi
+
+if [ -z "${USER_NAME}" ] || [ -z "${USER_EMAIL}" ]; then
+	echo "XSOFTWARE -> Cannot install this type of container without -u => Name or -e => Email"
+	exit 1
+fi
+
+wp_pwd=""
+odoo_pwd=""
+
+if [ "${USER_TYPE}" == "web" ]; then
+	ins_plugin="xsoftware-wordpress-framework xsoftware-wordpress-prodotti xsoftware-wordpress-seo xsoftware-wordpress-documentation xsoftware-wordpress-translate xsoftware-wordpress-build xsoftware-wordpress-socials xsoftware-template-html xsoftware-wordpress-theme xsoftware-wordpress-users"
+	pct exec ${USER_INDEX} -- apt install -y ${ins_plugin}
+	pct exec ${USER_INDEX} -- apt install -y wordpress xs-bash-wordpress mariadb-server
+	wp_pwd=$(xs_genpasswd)
+	pct exec ${USER_INDEX} -- xs-wordpress-install -u ${USER_NAME} -e ${USER_EMAIL} -p ${wp_pwd} $d_domain
+	pct exec ${ADM_PROXY} -- xs-proxy-install -u ${USER_NAME} -i ${USER_INDEX} -h "192.168.1.${USER_INDEX}" -p 80 -r $d_domain
+	pct exec ${ADM_PROXY} -- xs-proxy-install -u ${USER_NAME} -i ${USER_INDEX} -h "192.168.1.${USER_INDEX}" -p 80 -s $d_domain
+elif [ "${USER_TYPE}" == "erp" ]; then
+	ins_plugin="xsoftware-wordpress-framework xsoftware-wordpress-prodotti xsoftware-wordpress-seo xsoftware-wordpress-documentation xsoftware-wordpress-translate xsoftware-wordpress-build xsoftware-wordpress-socials xsoftware-wordpress-paypal xsoftware-wordpress-cart xsoftware-wordpress-odoo xsoftware-template-html xsoftware-wordpress-theme xsoftware-wordpress-users"
+	pct exec ${USER_INDEX} -- apt install -y ${ins_plugin}
+	pct exec ${USER_INDEX} -- apt install -y wordpress odoo mariadb-server xs-bash-wordpress xs-script-odoo
+	wp_pwd=$(xs_genpasswd)
+	pct exec ${USER_INDEX} -- xs-wordpress-install -u ${USER_NAME} -e ${USER_EMAIL} -p ${wp_pwd} $d_domain
+	odoo_pwd=$(xs_genpasswd)
+	pct exec ${USER_INDEX} -- xs-odoo-install -u ${USER_NAME} -p ${odoo_pwd}
+	pct exec ${ADM_PROXY} -- xs-proxy-install -u ${USER_NAME} -i ${USER_INDEX} -h "192.168.1.${USER_INDEX}" -p 80 -r $d_domain
+	pct exec ${ADM_PROXY} -- xs-proxy-install -u ${USER_NAME} -i ${USER_INDEX} -h "192.168.1.${USER_INDEX}" -p 80 -s $d_domain
+	if [ "${d_erp_domain}" ]; then
+		pct exec ${ADM_PROXY} -- xs-proxy-install -u ${USER_NAME} -i ${USER_INDEX} -h "192.168.1.${USER_INDEX}" -p 8069 $d_erp_domain
+		pct exec ${ADM_PROXY} -- xs-proxy-install -u ${USER_NAME} -i ${USER_INDEX} -h "192.168.1.${USER_INDEX}" -p 8069 -s $d_erp_domain
+	else
+		pct exec ${ADM_PROXY} -- xs-proxy-install -u "erp-${USER_NAME}" -i ${USER_INDEX} -h "192.168.1.${USER_INDEX}" -p 8069
+                pct exec ${ADM_PROXY} -- xs-proxy-install -u "erp-${USER_NAME}" -i ${USER_INDEX} -h "192.168.1.${USER_INDEX}" -p 8069 -s
+	fi
+fi
+
+pct exec ${USER_INDEX} -- apt clean
+
+pvesr create-local-job ${USER_INDEX}-0 pve2 --schedule "3:00"
+
+if [ -z "${USER_MONTH}" ]; then
+	USER_MONTH=1
+fi
+
+pct exec ${ADM_PGSQL} sh <<EOF
+psql -d ${ADM_PGSQL_DB} -U ${ADM_PGSQL_USER} -c "INSERT INTO users (index, name, mail, type, pass_root, pass_wp, pass_odoo,id_keys,status,expdate) VALUES (
+${USER_INDEX},
+'${USER_NAME}',
+'${USER_EMAIL}',
+'${USER_TYPE}',
+(SELECT pgp_pub_encrypt('${root_pwd}', dearmor(pub_key)) FROM keys WHERE id=${ADM_PGSQL_GPG}),
+(SELECT pgp_pub_encrypt('${wp_pwd}', dearmor(pub_key)) FROM keys WHERE id=${ADM_PGSQL_GPG}),
+(SELECT pgp_pub_encrypt('${odoo_pwd}', dearmor(pub_key)) FROM keys WHERE id=${ADM_PGSQL_GPG}),
+${ADM_PGSQL_GPG},
+${ADM_PGSQL_ACTIVE},
+current_date + interval '1 month' * ${USER_MONTH}
+);"
+EOF
+
+
+if [ "${USER_TYPE}" == "web" ]; then
+
+	mailbot_message_var="
+	Wordpress URL: https://${domain}/\n
+	Wordpress Admin User: admin\n
+	Wordpress Admin Email: ${USER_EMAIL}\n
+	Wordpress Admin Password: ${wp_pwd}\n
+	"
+
+elif [ "${USER_TYPE}" == "erp" ]; then
+
+	mailbot_message_var="
+        Wordpress URL: https://${domain}/\n
+        Wordpress Admin User: admin\n
+        Wordpress Admin Email: ${USER_EMAIL}\n
+        Wordpress Admin Password: ${wp_pwd}\n
+	Odoo URL: https://${erp_domain}/\n
+	Odoo Admin User: admin\n
+	Odoo Admin Password: ${odoo_pwd}\n
+	Odoo Database Name: ${USER_NAME}\n
+        "
+fi
+
+mailbot_message="
+Gentile cliente,\n
+\n
+Abbiamo creato i servizi da Lei richiesti:\n
+${mailbot_message_var}\n
+Per qualsiasi informazione ci contatti al seguente indirizzo email:\n
+${ADM_MAILBOT_INFOMAIL}
+"
+
+pct exec ${ADM_MAILBOT} sh <<EOF
+xs-sendemail -t "${USER_EMAIL}" -s "${ADM_MAILBOT_SUBJECT}" -m "${mailbot_message}"
+EOF
+echo "XSOFTWARE -> Created container ${USER_INDEX}"
+# *** PRINT RESULT *** #
+echo "WordPress Admin Password: ${wp_pwd}"
+echo "WordPress Admin User: admin"
+echo "WordPress Admin E-Mail: ${USER_EMAIL}"
+echo "WordPress DB Password: ${wp_pwd}"
+echo "WordPress DB User: wordpress"
+echo "WordPress DB Name: wordpress"
+
+if [ "${USER_TYPE}" == "erp" ]; then
+	echo "Odoo Admin User: admin"
+	echo "Odoo Admin Password: ${odoo_pwd}"
+	echo "Odoo Database Name: ${USER_NAME}"
+fi

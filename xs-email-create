@@ -1,0 +1,83 @@
+#!/bin/bash
+
+ADM_EMAIL="101"
+ADM_PGSQL_EXPIRED=2
+ADM_PGSQL_INACTIVE=0
+ADM_PGSQL_ACTIVE=1
+ADM_PGSQL_USER="mail"
+ADM_PGSQL_DB="mail"
+ADM_MAILBOT_SUBJECT="Attivazione E-Mail XSoftware"
+ADM_MAILBOT_INFOMAIL="info@xsoftware.it"
+
+while getopts "D:q:u:e:" opt; do
+        case $opt in
+	D)
+		USER_DOMAIN=$OPTARG
+		;;
+        q)
+                USER_QUOTA=$OPTARG
+                ;;
+	u)
+		USER_NAME=$OPTARG
+		;;
+	e)
+		USER_EMAIL=$OPTARG
+		;;
+        \?)
+                echo "Invalid option: -$OPTARG" >&2
+                exit 1
+                ;;
+        esac
+done
+
+if [ -z "${USER_NAME}" ]; then
+	echo "Invalid parameters input: -u => Name; -e => EMail"
+	exit 1
+fi
+
+if [ -z "${USER_DOMAIN}" ]; then
+	USER_DOMAIN="${USER_NAME}.xsoftware.eu"
+fi
+
+if [ -z "${USER_QUOTA}" ]; then
+	USER_QUOTA=50
+fi
+
+function xs_genpasswd {
+        LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32 ; echo
+}
+
+pwd=$(xs_genpasswd)
+
+hash_pwd=$(pct exec ${ADM_EMAIL} -- doveadm pw -s SHA512-CRYPT -p "${pwd}")
+
+hash_pwd=${hash_pwd##*\}}
+
+if [ "${USER_DOMAIN}" != "mail.xsoftware.eu" ]; then
+pct exec ${ADM_EMAIL} sh <<EOF
+psql -d ${ADM_PGSQL_DB} -U ${ADM_PGSQL_USER} -c "INSERT INTO virtual_domains (name) VALUES ('${USER_DOMAIN}');"
+EOF
+fi
+
+domain_id=$(
+pct exec ${ADM_EMAIL} sh <<EOF
+psql -t -d ${ADM_PGSQL_DB} -U ${ADM_PGSQL_USER} -c "SELECT id FROM virtual_domains WHERE name='${USER_DOMAIN}';"
+EOF
+)
+
+pct exec ${ADM_EMAIL} -- psql -d ${ADM_PGSQL_DB} -U ${ADM_PGSQL_USER} -c "INSERT INTO virtual_users (domain_id,password,name,quota) VALUES (${domain_id},'${hash_pwd}','${USER_NAME}','${USER_QUOTA}');"
+
+mailbot_message="
+Gentile cliente,\n
+\n
+Abbiamo attivato la sua EMail, di seguito troverà le istruzioni:\n
+Per accedere alla WEBMAIL segua il seguente link: https://email.xsoftware.it\n
+Il suo nome utente è il seguente: ${USER_NAME}@${USER_DOMAIN}\n
+La sua password è la seguente: ${pwd}\n
+Per qualsiasi informazione ci contatti al seguente indirizzo email:\n
+${ADM_MAILBOT_INFOMAIL}
+"
+
+pct exec ${ADM_EMAIL} sh <<EOF
+xs-sendemail -t "${USER_EMAIL}" -s "${ADM_MAILBOT_SUBJECT}" -m "${mailbot_message}"
+EOF

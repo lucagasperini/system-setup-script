@@ -1,0 +1,37 @@
+#!/bin/bash
+
+ADM_PROXY="100"
+ADM_PGSQL="103"
+ADM_PGSQL_EXPIRED=2
+ADM_PGSQL_INACTIVE=0
+ADM_PGSQL_ACTIVE=1
+ADM_PGSQL_USER="sys"
+ADM_PGSQL_DB="sys"
+
+while getopts "i:E:" opt; do
+        case $opt in
+        i)
+                USER_INDEX=$OPTARG
+                ;;
+	E)
+		USER_MONTH=$OPTARG
+		;;
+        \?)
+                echo "Invalid option: -$OPTARG" >&2
+                exit 1
+                ;;
+        esac
+done
+
+if [ -z "${USER_INDEX}" ]; then
+	echo "Invalid parameters input: -i => Index;"
+	exit 1
+fi
+
+if [ -z "${USER_MONTH}" ]; then
+	USER_MONTH=1
+fi
+
+pct exec ${ADM_PGSQL} sh <<EOF
+psql -d ${ADM_PGSQL_DB} -U ${ADM_PGSQL_USER} -c "UPDATE users SET status=${ADM_PGSQL_ACTIVE},expdate=current_date + interval '1 month' * ${USER_MONTH} WHERE index=${USER_INDEX} AND (status=${ADM_PGSQL_EXPIRED} OR status=${ADM_PSQL_ACTIVE});"
+EOF

@@ -1,0 +1,43 @@
+#!/bin/bash
+
+ADM_EMAIL="101"
+ADM_PGSQL_EXPIRED=2
+ADM_PGSQL_INACTIVE=0
+ADM_PGSQL_ACTIVE=1
+ADM_PGSQL_USER="mail"
+ADM_PGSQL_DB="mail"
+ADM_MAILBOT_SUBJECT="Attivazione E-Mail XSoftware"
+ADM_MAILBOT_INFOMAIL="info@xsoftware.it"
+
+while getopts "D:i:u:" opt; do
+        case $opt in
+	i)
+		USER_INDEX=$OPTARG
+		;;
+	D)
+		USER_DOMAIN=$OPTARG
+		;;
+	u)
+		USER_NAME=$OPTARG
+		;;
+        \?)
+                echo "Invalid option: -$OPTARG" >&2
+                exit 1
+                ;;
+        esac
+done
+
+if [ -z "${USER_INDEX}" ] || [ -z "${USER_NAME}" ]; then
+	echo "Invalid parameters input: -i => Index; -u => Name;"
+	exit 1
+fi
+
+if [ -z "${USER_DOMAIN}" ]; then
+        d_domain=""
+else
+        d_domain="-D ${USER_DOMAIN}"
+fi
+
+xs-email-remove -u ${USER_NAME} ${d_domain}
+xs-lxc-remove -i ${USER_INDEX}
+xs-nextcloud-user-del -u ${USER_NAME}

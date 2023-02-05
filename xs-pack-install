@@ -1,0 +1,105 @@
+#!/bin/bash
+
+ADM_EMAIL="101"
+ADM_PGSQL_EXPIRED=2
+ADM_PGSQL_INACTIVE=0
+ADM_PGSQL_ACTIVE=1
+ADM_PGSQL_USER="mail"
+ADM_PGSQL_DB="mail"
+ADM_MAILBOT_SUBJECT="Attivazione E-Mail XSoftware"
+ADM_MAILBOT_INFOMAIL="info@xsoftware.it"
+
+while getopts "D:i:u:e:t:" opt; do
+        case $opt in
+	i)
+		USER_INDEX=$OPTARG
+		;;
+	D)
+		USER_DOMAIN=$OPTARG
+		;;
+	u)
+		USER_NAME=$OPTARG
+		;;
+	e)
+		USER_EMAIL=$OPTARG
+		;;
+	t)
+		USER_TYPE=$OPTARG
+		;;
+        \?)
+                echo "Invalid option: -$OPTARG" >&2
+                exit 1
+                ;;
+        esac
+done
+
+if [ -z "${USER_INDEX}" ] || [ -z "${USER_NAME}" ] || [ -z "${USER_EMAIL}" ] || [ -z "${USER_TYPE}" ]; then
+	echo "Invalid parameters input: -i => Index; -u => Name; -e => EMail; -t Type;"
+	exit 1
+fi
+
+if [ -z "${USER_DOMAIN}" ]; then
+	d_domain=""
+else
+	d_domain="-D ${USER_DOMAIN}"
+fi
+
+
+case $USER_TYPE in
+	web_bronze)
+		quota_ct=25
+		quota_cloud=50
+		quota_mail=25
+		quota_ram=1024
+		quota_core=1
+                type="web"
+		;;
+	web_silver)
+                quota_ct=25
+                quota_cloud=100
+                quota_mail=25
+                quota_ram=2048
+                quota_core=2
+                type="web"
+		;;
+	web_gold)
+                quota_ct=50
+                quota_cloud=100
+                quota_mail=50
+                quota_ram=2048
+                quota_core=2
+		type="web"
+		;;
+	erp_bronze)
+                quota_ct=25
+                quota_cloud=50
+                quota_mail=25
+                quota_ram=2048
+                quota_core=2
+		type="erp"
+		;;
+	erp_silver)
+                quota_ct=25
+                quota_cloud=100
+                quota_mail=25
+                quota_ram=2048
+                quota_core=2
+		type="erp"
+		;;
+	erp_gold)
+                quota_ct=50
+                quota_cloud=200
+                quota_mail=50
+                quota_ram=4096
+                quota_core=4
+		type="erp"
+		;;
+	*)
+                echo "Invalid type: ${USER_TYPE}" >&2
+                exit 1
+                ;;
+esac
+
+xs-email-create -u ${USER_NAME} -e ${USER_EMAIL} -q ${quota_mail} ${d_domain}
+xs-lxc-create -d ${quota_ct} -i ${USER_INDEX} -c ${quota_core} -m ${quota_ram} -t ${type} -e ${USER_EMAIL} -u ${USER_NAME} ${d_domain}
+xs-nextcloud-user-add -u ${USER_NAME} -q ${quota_cloud} -e ${USER_EMAIL}
