@@ -1,0 +1,30 @@
+#!/bin/bash
+
+ADM_SERVER="127.0.0.1"
+ADM_FROM="mailbot@xsoftware.it"
+ADM_CHARSET="utf-8"
+
+while getopts "t:s:m:" opt; do
+        case $opt in
+        t)
+                USER_TO=$OPTARG
+                ;;
+	s)
+		USER_SUBJ=$OPTARG
+		;;
+	m)
+		USER_MSG=$OPTARG
+		;;
+        \?)
+                echo "Invalid option: -$OPTARG" >&2
+                exit 1
+                ;;
+        esac
+done
+
+if [ -z "${USER_TO}" ] || [ -z "${USER_SUBJ}" ] || [ -z "${USER_MSG}" ]; then
+        echo "Invalid parameters input: -t => To; -s => Subject; -m => Message;"
+        exit 1
+fi
+
+sendemail -f $ADM_FROM -t $USER_TO -u $USER_SUBJ -s $ADM_SERVER -m $USER_MSG -v -o message-charset=$ADM_CHARSET
