@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+
+import sys
+from odoo_rpc_client import Client
+
+db = sys.argv[1]
+passwd = sys.argv[2]
+
+client = Client('localhost')
+
+db = client.services.db.create_db(passwd, db, False, 'it_IT', passwd)
+
+obj = db["ir.config_parameter"]
+index = obj.search([('key', '=', 'web.base.url')])
+obj.unlink(index)
+
+db.execute("ir.config_parameter", "create", [{ "key": "report.url", "value": "http://127.0.0.1:8069"}])
+db.execute("ir.config_parameter", "create", [{ "key": "web.base.url", "value": "http://127.0.0.1:8069"}])
+db.execute("ir.config_parameter", "create", [{ "key": "web.base.url.freeze", "value": True}])
+db.execute("res.partner", "create", [{ "name": "nobody", "customer": True}])
+

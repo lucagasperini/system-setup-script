@@ -1,0 +1,38 @@
+#!/bin/bash
+
+ODOO_CONFIG="/etc/odoo/odoo.conf"
+ODOO_SCRIPT="/usr/bin/xs-odoo-config"
+
+while getopts "p:u:" opt; do
+        case $opt in
+        p)
+                USER_PASS=$OPTARG
+                ;;
+        u)
+                USER_NAME=$OPTARG
+                ;;
+        \?)
+                echo "Invalid option: -$OPTARG" >&2
+                exit 1
+                ;;
+        esac
+done
+
+if [ -z "${USER_NAME}" ] || [ -z "${USER_PASS}" ]; then
+	echo "Invalid parameters input: -u => Name; -p => Password;"
+fi
+
+echo "admin_passwd=${USER_PASS}" >> ${ODOO_CONFIG}
+
+apt install -y curl wkhtmltox python3-unidecode python3-pyxb
+
+systemctl restart odoo
+
+while true; do
+	if curl -s --head  --request GET localhost:8069 | grep "200 OK" > /dev/null; then 
+   		break
+	fi
+   	sleep 1
+done
+
+python3 ${ODOO_SCRIPT} ${USER_NAME} ${USER_PASS}
